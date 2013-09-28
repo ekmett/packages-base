@@ -335,4 +335,4 @@ deriving instance Typeable TypeRep
 
 deriving instance Typeable RealWorld
 deriving instance Typeable Proxy
-deriving instance Typeable (:=:)
+deriving instance Typeable (==)

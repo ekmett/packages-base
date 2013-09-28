@@ -47,7 +47,7 @@ instance Category (->) where
     id = Prelude.id
     (.) = (Prelude..)
 
-instance Category (:=:) where
+instance Category (==) where
   id          = Refl
   Refl . Refl = Refl
 

@@ -1310,20 +1310,20 @@ instance (Data t) => Data (Proxy t) where
   dataCast1 f  = gcast1 f
 
 -----------------------------------------------------------------------
--- instance for (:=:)
+-- instance for (==)
 
 reflConstr :: Constr
 reflConstr = mkConstr equalityDataType "Refl" [] Prefix
 
 equalityDataType :: DataType
-equalityDataType = mkDataType "Data.Type.Equality.(:=:)" [reflConstr]
+equalityDataType = mkDataType "Data.Type.Equality.(==)" [reflConstr]
 
-instance (Typeable a, Data a) => Data (a :=: a) where
+instance (Typeable a, Data a) => Data (a == a) where
   gfoldl _ z Refl = z Refl
   toConstr Refl   = reflConstr
   gunfold _ z c   = case constrIndex c of
                       1 -> z Refl
-                      _ -> error "Data.Data.gunfold(:=:)"
+                      _ -> error "Data.Data.gunfold(==)"
   dataTypeOf _    = equalityDataType
   dataCast2 f     = gcast2 f
 
