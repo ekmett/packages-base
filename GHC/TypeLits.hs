@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,7 +23,8 @@ module GHC.TypeLits
     Nat, Symbol
 
     -- * Linking type and value level
-  , KnownNat(..), KnownSymbol(..)
+  , Reifying(..)
+  , reify#
   , SomeNat(..), SomeSymbol(..)
   , someNatVal, someSymbolVal
 
@@ -35,10 +37,10 @@ import GHC.Base(Eq(..), Ord(..), Bool(True), otherwise)
 import GHC.Num(Integer)
 import GHC.Base(String)
 import GHC.Show(Show(..))
+import GHC.Prim(Proxy#, proxy#)
 import GHC.Read(Read(..))
-import GHC.Prim(magicSingI)
+import GHC.Reflection(Reifying(..), reify#)
 import Data.Maybe(Maybe(..))
-import Data.Proxy(Proxy(..))
 
 -- | (Kind) This is the kind of type-level natural numbers.
 data Nat
@@ -46,51 +48,46 @@ data Nat
 -- | (Kind) This is the kind of type-level symbols.
 data Symbol
 
+-- | This intance gives the integer associated with a type-level natural.
+-- There are instances for every concrete literal: 0, 1, 2, etc.
+instance SingI n => Reifying (n :: Nat) where
+  type Reified n = Integer
+  reflect# _ = case sing :: Sing n of
+    SNat x -> x
+
+-- | This instance gives the string associated with a type-level symbol.
+-- There are instances for every concrete literal: "hello", etc.
+instance SingI n => Reifying (n :: Symbol) where
+  type Reified (n :: Symbol) = String
+  reflect# _ = case sing :: Sing n of
+    SSym x -> x
 
 --------------------------------------------------------------------------------
 
--- | This class gives the integer associated with a type-level natural.
--- There are instances of the class for every concrete literal: 0, 1, 2, etc.
-class KnownNat (n :: Nat) where
-  natVal :: proxy n -> Integer
-
--- | This class gives the integer associated with a type-level symbol.
--- There are instances of the class for every concrete literal: "hello", etc.
-class KnownSymbol (n :: Symbol) where
-  symbolVal :: proxy n -> String
-
 -- | This type represents unknown type-level natural numbers.
-data SomeNat    = forall n. KnownNat n    => SomeNat    (Proxy n)
+data SomeNat    = forall (n :: Nat).    Reifying n => SomeNat    (Proxy# n)
 
 -- | This type represents unknown type-level symbols.
-data SomeSymbol = forall n. KnownSymbol n => SomeSymbol (Proxy n)
-
-instance SingI n => KnownNat n where
-  natVal _ = case sing :: Sing n of
-               SNat x -> x
-
-instance SingI n => KnownSymbol n where
-  symbolVal _ = case sing :: Sing n of
-                  SSym x -> x
+data SomeSymbol = forall (n :: Symbol). Reifying n => SomeSymbol (Proxy# n)
 
 -- | Convert an integer into an unknown type-level natural.
 someNatVal :: Integer -> Maybe SomeNat
 someNatVal n
-  | n >= 0        = Just (forgetSingNat (SNat n))
-  | otherwise     = Nothing
+  | n >= 0    = Just (reify# n SomeNat)
+  | otherwise = Nothing
 
 -- | Convert a string into an unknown type-level symbol.
 someSymbolVal :: String -> SomeSymbol
-someSymbolVal n   = forgetSingSymbol (SSym n)
+someSymbolVal n = reify# n SomeSymbol
 
 instance Eq SomeNat where
-  SomeNat x == SomeNat y = natVal x == natVal y
+  SomeNat x == SomeNat y = reflect# x == reflect# y
 
 instance Ord SomeNat where
-  compare (SomeNat x) (SomeNat y) = compare (natVal x) (natVal y)
+  compare (SomeNat x) (SomeNat y) = compare (reflect# x) (reflect# y)
 
 instance Show SomeNat where
-  showsPrec p (SomeNat x) = showsPrec p (natVal x)
+  showsPrec p (SomeNat x) = showsPrec p (reflect# x)
 
 instance Read SomeNat where
   readsPrec p xs = do (a,ys) <- readsPrec p xs
@@ -100,13 +97,13 @@ instance Read SomeNat where
 
 
 instance Eq SomeSymbol where
-  SomeSymbol x == SomeSymbol y = symbolVal x == symbolVal y
+  SomeSymbol x == SomeSymbol y = reflect# x == reflect# y
 
 instance Ord SomeSymbol where
-  compare (SomeSymbol x) (SomeSymbol y) = compare (symbolVal x) (symbolVal y)
+  compare (SomeSymbol x) (SomeSymbol y) = compare (reflect# x) (reflect# y)
 
 instance Show SomeSymbol where
-  showsPrec p (SomeSymbol x) = showsPrec p (symbolVal x)
+  showsPrec p (SomeSymbol x) = showsPrec p (reflect# x)
 
 instance Read SomeSymbol where
   readsPrec p xs = [ (someSymbolVal a, ys) | (a,ys) <- readsPrec p xs ]
@@ -139,8 +136,6 @@ type family (m :: Nat) ^ (n :: Nat) :: Nat
 -- /Since: 4.7.0.0/
 type family (m :: Nat) - (n :: Nat) :: Nat
 
-
-
 --------------------------------------------------------------------------------
 -- PRIVATE:
 
@@ -152,33 +147,3 @@ class SingI a where
 data family      Sing (n :: k)
 newtype instance Sing (n :: Nat)    = SNat Integer
 newtype instance Sing (n :: Symbol) = SSym String
-
-
-{- PRIVATE:
-The functions below convert a value of type `Sing n` into a dictionary
-for `SingI` for `Nat` and `Symbol`.
-
-NOTE: The implementation is a bit of a hack at present,
-hence all the very special annotations.  See Note [magicSingIId magic]
-for more details.
--}
-forgetSingNat :: forall n. Sing (n :: Nat) -> SomeNat
-forgetSingNat x = withSingI x it Proxy
-  where
-  it :: SingI n => Proxy n -> SomeNat
-  it = SomeNat
-
-forgetSingSymbol :: forall n. Sing (n :: Symbol) -> SomeSymbol
-forgetSingSymbol x = withSingI x it Proxy
-  where
-  it :: SingI n => Proxy n -> SomeSymbol
-  it = SomeSymbol
-
--- | THIS IS NOT SUPPOSED TO MAKE SENSE.
--- See Note [magicSingIId magic]
-{-# NOINLINE withSingI #-}
-withSingI :: Sing n -> (SingI n => a) -> a
-withSingI x = magicSingI x ((\f -> f) :: () -> ())
-
-
-
