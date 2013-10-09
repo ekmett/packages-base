@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
